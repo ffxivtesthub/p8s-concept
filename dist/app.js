@@ -1,6 +1,7 @@
 import { ROLES,CODES,GREEK,ELEMENTS,STEPS,STRATEGY,ROUND_STEPS,isFusionRound,nextStep,fusionPairs,checkpointPositions,tickFusion,liveConcept,livePlan,validateRound,createEncounter,label,concept,validate,distance } from './engine.mjs';
 import {PUZZLES,TILES,puzzleMarkup,castModel} from './ui-model.mjs';
 import {statusModel} from './status-model.mjs';
+import {statusBadgeMarkup,statusLegendMarkup,recipeOutcomeMarkup} from './reference.mjs';
 
 const $=id=>document.getElementById(id);
 const arena=$('arena'), ns='http://www.w3.org/2000/svg';
@@ -15,7 +16,13 @@ let keys=new Set(),last=0,toastTimer,drawAge=0;
 let stats={attempts:0,clears:0};
 try{const saved=JSON.parse(localStorage.getItem('concept-lab-v1')||'{}');stats={attempts:Number(saved.attempts)||0,clears:Number(saved.clears)||0};}catch{}
 const sprite=[];
-// 攻略筆記與速查沿用同一組實際頭上拼圖，不再僅以 α／β／γ 文字當配方。
+// Both reference surfaces share the same game icons and recipe rendering.
+document.querySelectorAll('[data-status-legend]').forEach(el=>el.innerHTML=statusLegendMarkup());
+document.querySelectorAll('[data-status-badge]').forEach(el=>{
+  const [group,type]=el.dataset.statusBadge.split(':');
+  el.innerHTML=statusBadgeMarkup(group,type,el.dataset.seconds?Number(el.dataset.seconds):null);
+});
+document.querySelectorAll('.recipe-outcome[data-element]').forEach(el=>el.innerHTML=recipeOutcomeMarkup(el.dataset.element));
 $('guide-recipes').append(...[...document.querySelectorAll('.recipe-strip .recipe')].map(card=>card.cloneNode(true)));
 document.querySelectorAll('svg[data-puzzle]').forEach(diagram=>{
   diagram.innerHTML=puzzleMarkup(diagram.dataset.puzzle,diagram.dataset.highlight);
