@@ -1,5 +1,6 @@
 import { ROLES,CODES,GREEK,ELEMENTS,STEPS,STRATEGY,ROUND_STEPS,isFusionRound,nextStep,fusionPairs,checkpointPositions,tickFusion,liveConcept,livePlan,validateRound,createEncounter,label,concept,validate,distance } from './engine.mjs';
 import {PUZZLES,TILES,puzzleMarkup,castModel} from './ui-model.mjs';
+import {statusModel} from './status-model.mjs';
 
 const $=id=>document.getElementById(id);
 const arena=$('arena'), ns='http://www.w3.org/2000/svg';
@@ -104,13 +105,11 @@ function taskText(){
 }
 function updateUI(){
   const s=Math.min(step,5),p=encounter.players[encounter.me],status=actorConcept(encounter.me);
-  $('your-concept').textContent=label(p.code);$('your-role').textContent=p.role+' · YOU';
-  const col=colour[p.code[1]]||'#b6d4bd';
-  $('concept-icon').textContent=p.code==='sp2'?'Ⅱ':p.code==='sp3'?'Ⅲ':GREEK[p.code[1]];$('concept-icon').style.color=col;$('concept-icon').style.borderColor=col+'88';
-  $('current-concept').textContent=state==='cleared'?(finishedSegment?'本段完成':'概念解消'):state==='idle'&&step===0?'等待概念支配':status.text;
+  $('your-concept').textContent='目前狀態';$('your-role').textContent=p.role+' · YOU';
+  $('current-concept').textContent=state==='cleared'?(finishedSegment?'本段完成':'概念解消'):({debuff:'概念待爆發',concept:'完整概念',animal:'合成完成',none:'尚無概念'})[status.kind];
   $('training').classList.toggle('selected',mode==='training');$('challenge').classList.toggle('selected',mode==='challenge');
   $('training').setAttribute('aria-pressed',mode==='training');$('challenge').setAttribute('aria-pressed',mode==='challenge');
-  $('mode-note').textContent=mode==='training'?'合成滿兩秒立即生效，可接著踩塔。':'合成、踩塔與左右刀共用一段倒數。';
+  $('mode-note').textContent=mode==='training'?'BUFF 隨段落倒數；讀條結束後停表，等手動結算。':'合成、踩塔與左右刀共用一段倒數。';
   $('state-badge').textContent=({idle:'準備就緒',running:demo?'自動示範':'演練中',paused:'已暫停',failed:'概念失敗',review:'查看解法',cleared:'演練完成'})[state];
   $('state-badge').className='state-badge '+(state==='failed'?'failed':state==='running'?'running':'');
   $('step-number').textContent=String(Math.min(ROUND_STEPS.indexOf(roundBase(s))+1,4)).padStart(2,'0');
@@ -144,14 +143,18 @@ function updatePuzzleReadout(){
     const available=PUZZLES[c.type].filter(t=>!t.dominant).map(t=>TILES[t.key].name).join('／');
     $('puzzle-description').textContent='你有'+available+'。找與你同樣有本輪塔元素的人；金框是主元素。';diagram.setAttribute('aria-label',GREEK[c.type]+' 拼圖，可合成 '+available);
   }else if(c.kind==='animal'){
-    diagram.innerHTML=`<circle cx="0" cy="-31" r="22" fill="${ELEMENTS[c.type].color}22" stroke="${ELEMENTS[c.type].color}"/><text x="0" y="-24" text-anchor="middle" fill="${ELEMENTS[c.type].color}" font-size="21">${ELEMENTS[c.type].animal}</text>`;
-    $('puzzle-description').textContent='已合成'+ELEMENTS[c.type].animal+'，持有'+ELEMENTS[c.type].name+'概念。';diagram.setAttribute('aria-label',c.text);
+    diagram.innerHTML=`<image href="${statusModel(c,encounter.players[encounter.me].code,step,stageAge).src}" x="-23" y="-63" width="46" height="62"/>`;
+    $('puzzle-description').textContent='合成完成，現在持有'+ELEMENTS[c.type].name+'概念。依目標前往塔位。';diagram.setAttribute('aria-label',c.text);
   }else{
     diagram.innerHTML='<text x="0" y="-20" text-anchor="middle" fill="#748f85" font-size="28">◇</text>';
     $('puzzle-description').textContent=c.kind==='none'?'尚無拼圖，接到長概念爆發後會取得。':'目前是未爆發狀態，爆發後頭上才會顯示拼圖。';diagram.setAttribute('aria-label','尚未取得完整概念拼圖');
   }
 }
 function updateTimer(){
+  const status=statusModel(actorConcept(encounter.me),encounter.players[encounter.me].code,step,stageAge);
+  const portrait=$('concept-icon'),image=$('status-image'),countdown=$('status-countdown');
+  portrait.hidden=!status;
+  if(status){if(image.getAttribute('src')!==status.src)image.setAttribute('src',status.src);image.alt=actorConcept(encounter.me).text;countdown.textContent=status.countdown;countdown.hidden=status.seconds===null;portrait.classList.toggle('urgent',status.urgent);portrait.title=actorConcept(encounter.me).text+(status.seconds===null?'':'，剩餘 '+status.countdown+' 秒');}
   const timer=$('timer');timer.replaceChildren();
   const unbounded=mode==='training'&&!demo;timer.append(document.createTextNode(unbounded?'∞':Math.max(0,remaining).toFixed(1)));
   if(state==='running'&&mode==='challenge'&&!demo)$('state-badge').textContent='剩餘 '+Math.max(0,remaining).toFixed(1)+' 秒';
@@ -174,8 +177,8 @@ function buildSprites(){
   $('players').replaceChildren();sprite.length=0;
   ROLES.forEach((_,i)=>{
     const g=svg('g',{'class':'player-tag'}),glow=svg('circle',{r:16,fill:'#b8f0cf22',filter:'url(#softglow)'}),ring=svg('circle',{r:14,'class':'player-ring'}),body=svg('circle',{r:10,'class':'player-body'}),role=svg('text',{y:3.5,'class':'player-role'}),symbol=svg('text',{y:-19,'class':'player-symbol'}),you=svg('text',{y:26,'class':'you-label'},'YOU');
-    const puzzle=svg('g',{'class':'overhead-puzzle'}),stem=svg('path',{stroke:'#b4c7bf66','stroke-width':.7,fill:'none'});
-    g.append(glow,ring,body,role,stem,puzzle,symbol,you);$('players').append(g);sprite.push({g,glow,ring,body,role,symbol,you,puzzle,stem,puzzleKey:''});
+    const statusImage=svg('image',{'class':'player-status-image',x:-15,y:-55,width:30,height:40}),puzzle=svg('g',{'class':'overhead-puzzle'}),stem=svg('path',{stroke:'#b4c7bf66','stroke-width':.7,fill:'none'});
+    g.append(glow,ring,body,role,stem,puzzle,statusImage,symbol,you);$('players').append(g);sprite.push({g,glow,ring,body,role,symbol,you,puzzle,statusImage,stem,puzzleKey:''});
   });
 }
 function renderScene(){
@@ -226,11 +229,19 @@ function drawPlayers(){
     const highlight=($('hints').checked||demo)?s<=3?encounter.first:encounter.second:null;
     const key=showPuzzle?c.type+':'+highlight:'';
     if(el.puzzleKey!==key){el.puzzle.innerHTML=showPuzzle?puzzleMarkup(c.type,highlight):'';el.puzzleKey=key;}
-    const overheadShift=showPuzzle&&near.length>1?(near.indexOf(i)-(near.length-1)/2)*26:0;
+    const overheadShift=near.length>1?(near.indexOf(i)-(near.length-1)/2)*(showPuzzle?30:34):0;
     el.puzzle.setAttribute('transform',`translate(${overheadShift} 0)`);
-    el.stem.setAttribute('d',showPuzzle?`M0 -12L${overheadShift} -20`:'');
-    const symbol=c.kind==='animal'?ELEMENTS[c.type].animal:c.kind==='none'?'·':c.kind==='debuff'?player.code==='sp2'?'Ⅱ':player.code==='sp3'?'Ⅲ':(player.code[0]==='s'?'短':'長')+GREEK[player.code[1]]:GREEK[c.type];
-    el.symbol.textContent=step>=6?'':symbol;el.symbol.setAttribute('fill',colour[c.type]||'#acbfaf');el.symbol.setAttribute('y',showPuzzle?-62:-19);el.symbol.setAttribute('x',overheadShift);
+    const buff=statusModel(c,player.code,step,stageAge),showStatus=!!buff&&!showPuzzle;
+    el.stem.setAttribute('d',showPuzzle||showStatus?`M0 -12L${overheadShift} -22`:'');
+    el.statusImage.style.display=showStatus?'':'none';
+    if(showStatus){
+      if(el.statusImage.getAttribute('href')!==buff.src)el.statusImage.setAttribute('href',buff.src);
+      const animal=c.kind==='animal',w=animal?42:30;
+      el.statusImage.setAttribute('x',overheadShift-w/2);el.statusImage.setAttribute('y',animal?-64:-57);
+      el.statusImage.setAttribute('width',w);el.statusImage.setAttribute('height',w*4/3);
+    }
+    el.symbol.textContent=showStatus?buff.countdown:'';
+    el.symbol.setAttribute('fill',buff?.urgent?'#ffb69c':'#fff3d9');el.symbol.setAttribute('y',-12);el.symbol.setAttribute('x',overheadShift);
     const shared=showPuzzle?PUZZLES[c.type].map(t=>TILES[t.key].name).join('、'):'';
     el.g.setAttribute('aria-label',player.role+(isYou?' 你':'')+' '+c.text+(shared?'，拼圖：'+shared:''));
   });

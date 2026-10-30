@@ -11,7 +11,7 @@ export const STEPS = [
   {name:'初次分散',en:'IMPERFECTION',duration:8,description:'短 α／β／γ 去 A／B／C；長 α 去右上二人分攤，長 β／γ 去中央三人分攤。'},
   {name:'第一輪合成・兩塔與左右刀',en:'SYNTHESIS / ARCANE CONTROL I',duration:12,description:'看塔色合成；靠近滿兩秒立即變成動物，接著踩兩塔並躲左右刀，共用同一段倒數。'},
   {name:'兩塔與半場攻擊',en:'ARCANE CONTROL I',duration:6,description:'合成者一人一塔；所有人站在安全半場。'},
-  {name:'長概念爆發',en:'CONCEPTUAL SHIFT',duration:8,description:'長概念分散；分攤者補進第一次合成空出的概念位置，複製概念。'},
+  {name:'長概念爆發',en:'CONCEPTUAL SHIFT',duration:6,description:'長概念分散；分攤者補進第一次合成空出的概念位置，複製概念。'},
   {name:'第二輪合成・四塔與左右刀',en:'SYNTHESIS / ARCANE CONTROL II',duration:12,description:'內側組上面合成、外側組下面合成；每組合成後立即前往四塔並躲左右刀，共用同一段倒數。'},
   {name:'四塔與半場攻擊',en:'ARCANE CONTROL II',duration:6,description:'四名新合成者各踩一塔，同時躲避第二次半場攻擊。'}
 ];

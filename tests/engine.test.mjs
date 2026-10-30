@@ -3,6 +3,29 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createEncounter,validate,CODES,ROLES,concept,ELEMENTS,STEPS,ROUND_STEPS,nextStep,checkpointPositions,fusionPairs,tickFusion,liveConcept,livePlan,validateRound,distance} from '../dist/engine.mjs';
 import {PUZZLES,puzzleMarkup,castModel} from '../dist/ui-model.mjs';
+import {statusModel,STATUS_ICONS,mechanicTime} from '../dist/status-model.mjs';
+
+test('game status icons share long/short art and restore continuous 8s/26s timers at checkpoints',()=>{
+  const debuff={kind:'debuff',type:'A'},a=statusModel(debuff,'sA',0),b=statusModel(debuff,'lA',0);
+  assert.equal(a.src,b.src);assert.equal(a.countdown,'8');assert.equal(b.countdown,'26');
+  assert.equal(statusModel(debuff,'lA',0,8).countdown,'18');
+  assert.equal(statusModel(debuff,'lA',1).countdown,'18');
+  assert.equal(statusModel(debuff,'lA',1,12).countdown,'6');
+  assert.equal(statusModel(debuff,'lA',3).countdown,'6');
+  assert.equal(statusModel(debuff,'lA',3,6).countdown,'0');
+  assert.equal(statusModel(debuff,'lA',1,100).countdown,'6'); // manual teaching clock holds at deadline
+  assert.equal(mechanicTime(2,6),mechanicTime(3,0));
+  assert.equal(mechanicTime(3,6),mechanicTime(4,0));
+  for(const code of ['sp2','sp3'])assert.equal(statusModel(debuff,code,0,3.1).countdown,'5');
+  assert.equal(statusModel({kind:'animal',type:'water'},'sA',1).seconds,null);
+  assert.equal(statusModel({kind:'concept',type:'B'},'lB',4).seconds,null);
+  assert.equal(statusModel({kind:'none'},'sp2',1),null);
+  assert.equal(statusModel(debuff,'lA',6),null);
+  for(const group of Object.values(STATUS_ICONS))for(const id of Object.values(group)){
+    const png=readFileSync(new URL(`../dist/assets/status/${id}.png`,import.meta.url));
+    assert.equal(png.subarray(1,4).toString(),'PNG');
+  }
+});
 test('head puzzles share exactly the tower element required by each legal synthesis',()=>{
   for(const [element,{pair}] of Object.entries(ELEMENTS)){
     const a=PUZZLES[pair[0]],b=PUZZLES[pair[1]];
