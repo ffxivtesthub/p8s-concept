@@ -9,16 +9,45 @@ export const ELEMENTS = {
 };
 export const STEPS = [
   {name:'初次分散',en:'IMPERFECTION',duration:8,description:'短 α／β／γ 去 A／B／C；長 α 去右上二人分攤，長 β／γ 去中央三人分攤。'},
-  {name:'第一次合成',en:'SYNTHESIS I',duration:6,description:'辨認兩座塔的顏色，對應的兩名短概念靠近合成。'},
+  {name:'第一輪合成・兩塔與左右刀',en:'SYNTHESIS / ARCANE CONTROL I',duration:12,description:'看塔色合成；靠近滿兩秒立即變成動物，接著踩兩塔並躲左右刀，共用同一段倒數。'},
   {name:'兩塔與半場攻擊',en:'ARCANE CONTROL I',duration:6,description:'合成者一人一塔；所有人站在安全半場。'},
   {name:'長概念爆發',en:'CONCEPTUAL SHIFT',duration:8,description:'長概念分散；分攤者補進第一次合成空出的概念位置，複製概念。'},
-  {name:'第二次合成',en:'SYNTHESIS II',duration:6,description:'依菓子攻略：內側的複製／剩餘短概念在上面合成，外側長概念在下面合成。'},
+  {name:'第二輪合成・四塔與左右刀',en:'SYNTHESIS / ARCANE CONTROL II',duration:12,description:'內側組上面合成、外側組下面合成；每組合成後立即前往四塔並躲左右刀，共用同一段倒數。'},
   {name:'四塔與半場攻擊',en:'ARCANE CONTROL II',duration:6,description:'四名新合成者各踩一塔，同時躲避第二次半場攻擊。'}
 ];
 // Verified against the user's local 菓子 guide, 09:00–12:10 (especially 09:30, 11:00, 11:40).
 export const STRATEGY = {name:'菓子攻略',verified:true,spots:{A:[5,5],B:[5,95],C:[95,95]},inner:{A:[20,20],B:[20,80],C:[80,80]},stack2:[74,25],stack3:[50,50]};
 export const distance = (a,b) => Math.hypot(a.x-b.x,a.y-b.y);
 export const point = ([x,y]) => ({x,y});
+export const ROUND_STEPS = [0,1,3,4];
+export const isFusionRound = step => step===1||step===4;
+export const nextStep = step => step===1?3:step===4?6:step+1;
+export function fusionPairs(e,step){return step===1?[e.firstPair]:step===4?e.secondPairs:[];}
+export function checkpointPositions(e,step){
+  if(!Number.isInteger(step)||step<0||step>5)throw new RangeError('Invalid practice checkpoint');
+  return step===0?ROLES.map((_,i)=>({x:39+(i%4)*7,y:46+Math.floor(i/4)*9})):e.plans[step-1].map(p=>({...p.target}));
+}
+// Completed synthesis is latched: walking apart afterwards must not undo it.
+export function tickFusion(e,step,positions,holds,dt){
+  return fusionPairs(e,step).map(([a,b],k)=>holds[k]>=2?2:distance(positions[a],positions[b])<=6?Math.min(2,(holds[k]||0)+dt):0);
+}
+export function liveConcept(e,step,i,holds=[]){
+  const k=fusionPairs(e,step).findIndex(pair=>pair.includes(i));
+  return concept(e,isFusionRound(step)&&k>=0&&holds[k]>=2?step+1:step,i);
+}
+export function livePlan(e,step,i,holds=[]){
+  if(!isFusionRound(step))return e.plans[step][i];
+  const k=fusionPairs(e,step).findIndex(pair=>pair.includes(i));
+  return e.plans[k<0||holds[k]>=2?step+1:step][i];
+}
+export function validateRound(e,step,positions,holds=[]){
+  if(!isFusionRound(step))return validate(e,step,positions);
+  const issues=[];
+  fusionPairs(e,step).forEach((pair,k)=>{if(!(holds[k]>=2))for(const i of pair)issues.push({player:i,message:'尚未完成合成：與正確搭檔靠近滿兩秒，再前往塔位。'});});
+  // Towers and the cleave resolve together at the shared deadline.
+  issues.push(...validate(e,step+1,positions));
+  return issues;
+}
 export function label(code) {
   if (code==='sp2') return '二人分攤';
   if (code==='sp3') return '三人分攤';
@@ -61,7 +90,7 @@ function makePlan(e,step) {
     }
     if(step===3){
       const order=e.firstPair.indexOf(i);
-      if(order>=0){target={x:50,y:order===0?25:75};action='避開概念爆發';}
+      if(order>=0){target={x:order===0?72:85,y:order===0?14:24};action='右上 2 點附近分散待機，避開長概念爆發';}
       else {const type=e.typeAfter[i];target=point(code[0]==='l'?STRATEGY.spots[type]:STRATEGY.inner[type]);action=code[0]==='l'?'長概念引爆':'複製 '+GREEK[type];}
     }
     if(step===4 || step===5){

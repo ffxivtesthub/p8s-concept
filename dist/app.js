@@ -1,46 +1,57 @@
-import { ROLES,CODES,GREEK,ELEMENTS,STEPS,STRATEGY,createEncounter,label,concept,validate,distance } from './engine.mjs';
+import { ROLES,CODES,GREEK,ELEMENTS,STEPS,STRATEGY,ROUND_STEPS,isFusionRound,nextStep,fusionPairs,checkpointPositions,tickFusion,liveConcept,livePlan,validateRound,createEncounter,label,concept,validate,distance } from './engine.mjs';
 import {PUZZLES,TILES,puzzleMarkup,castModel} from './ui-model.mjs';
 
 const $=id=>document.getElementById(id);
 const arena=$('arena'), ns='http://www.w3.org/2000/svg';
 const colour={A:'#e49b9e',B:'#e0c47b',C:'#87bfdf',...Object.fromEntries(Object.entries(ELEMENTS).map(([k,v])=>[k,v.color]))};
 let encounter,step=0,state='idle',mode='training',positions=[],dest=null,remaining=8,hold=[],wrongHolds=new Map(),demo=false,stageAge=0,counted=false,simulationElapsed=0;
+let practiceStart=0,entryPositions=[],finishedSegment=false,cleaveShown=false;
+const roundBase=s=>s===2?1:s>=4?4:s;
+const actorConcept=i=>liveConcept(encounter,Math.min(step,5),i,hold);
+const actorPlan=i=>livePlan(encounter,Math.min(step,5),i,hold);
+const showCleave=()=>step===2||step===5||(isFusionRound(step)&&stageAge>=6);
 let keys=new Set(),last=0,toastTimer,drawAge=0;
 let stats={attempts:0,clears:0};
 try{const saved=JSON.parse(localStorage.getItem('concept-lab-v1')||'{}');stats={attempts:Number(saved.attempts)||0,clears:Number(saved.clears)||0};}catch{}
 const sprite=[];
+// 攻略筆記與速查沿用同一組實際頭上拼圖，不再僅以 α／β／γ 文字當配方。
+$('guide-recipes').append(...[...document.querySelectorAll('.recipe-strip .recipe')].map(card=>card.cloneNode(true)));
+document.querySelectorAll('svg[data-puzzle]').forEach(diagram=>{
+  diagram.innerHTML=puzzleMarkup(diagram.dataset.puzzle,diagram.dataset.highlight);
+});
 function svg(tag,attrs={},text){const el=document.createElementNS(ns,tag);for(const[k,v]of Object.entries(attrs))el.setAttribute(k,v);if(text!=null)el.textContent=text;return el;}
 function px(p){return{x:48+p.x*5.04,y:48+p.y*5.04};}
 function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,3000);}
 function saveStats(){try{localStorage.setItem('concept-lab-v1',JSON.stringify(stats));}catch{}$('attempts').textContent=stats.attempts;$('clears').textContent=stats.clears;}
 function selectedRole(){return $('role').value || 'D1';}
 function setDisabledSettings(disabled){document.querySelectorAll('#role-picker button, #debuff, #training, #challenge').forEach(el=>el.disabled=disabled);}
-function reset(random=true){
+function reset(random=true,start=practiceStart){
   if(random||!encounter)encounter=createEncounter({role:selectedRole(),fixed:$('debuff').value});
-  state='idle';step=0;remaining=STEPS[0].duration;demo=false;counted=false;dest=null;keys.clear();stageAge=0;simulationElapsed=0;
-  positions=ROLES.map((_,i)=>({x:39+(i%4)*7,y:46+Math.floor(i/4)*9}));
-  hold=[0];wrongHolds=new Map();$('result').hidden=true;document.body.classList.remove('demo');setDisabledSettings(false);updateUI();renderScene();
+  state='idle';step=start;practiceStart=start;remaining=STEPS[step].duration;demo=false;counted=false;dest=null;keys.clear();stageAge=0;simulationElapsed=0;finishedSegment=false;cleaveShown=false;
+  positions=checkpointPositions(encounter,step);entryPositions=positions.map(p=>({...p}));
+  hold=currentPairs().map(()=>0);wrongHolds=new Map();$('result').hidden=true;document.body.classList.remove('demo');setDisabledSettings(false);updateUI();renderScene();
 }
+function jumpToStage(target){$('single-stage').checked=true;reset(false,target);toast('已載入本段起點，保留本局分配與塔色。');}
 function begin(isDemo=false){
   demo=isDemo;state='running';stageAge=0;hold=currentPairs().map(()=>0);wrongHolds.clear();
   if(!demo&&!counted){counted=true;stats.attempts++;saveStats();}
   document.body.classList.toggle('demo',demo);setDisabledSettings(true);$('result').hidden=true;updateUI();renderScene();
 }
-function currentPairs(){return step===1?[encounter.firstPair]:step===4?encounter.secondPairs:[];}
+function currentPairs(){return fusionPairs(encounter,step);}
 function advance(){
-  step++;dest=null;stageAge=0;wrongHolds.clear();
+  step=nextStep(step);dest=null;stageAge=0;wrongHolds.clear();cleaveShown=false;
   if(step>=STEPS.length){finish();return;}
-  remaining=STEPS[step].duration;hold=currentPairs().map(()=>0);updateUI();renderScene();
+  remaining=STEPS[step].duration;hold=currentPairs().map(()=>0);entryPositions=positions.map(p=>({...p}));updateUI();renderScene();
 }
 function resolve(){
   if(state!=='running')return;
-  if(positions.some((p,i)=>i!==encounter.me&&distance(p,encounter.plans[step][i].target)>1)){
+  if(positions.some((p,i)=>i!==encounter.me&&distance(p,actorPlan(i).target)>1)){
     if(mode==='training'&&!demo){toast('隊友正在就位，稍候再結算。');return;}
   }
-  const issues=validate(encounter,step,positions);
-  currentPairs().forEach((pair,k)=>{if(hold[k]<1.98)issues.push({player:pair.includes(encounter.me)?encounter.me:pair[0],message:'與搭檔靠近後，需要維持 2 秒才能完成合成。'});});
+  const issues=validateRound(encounter,step,positions,hold);
   if(issues.length){fail(issues);return;}
-  if(!demo)toast('✓ '+STEPS[step].name+' · 成功');advance();
+  if(!demo)toast('✓ '+STEPS[step].name+' · 成功');
+  if($('single-stage').checked)finish(true);else advance();
 }
 function fail(issues){
   state='failed';dest=null;keys.clear();
@@ -57,16 +68,16 @@ function fail(issues){
   actions.append(retry,show);$('result').append(icon,h,p,actions);updateUI();
 }
 function retryStep(){
-  $('result').hidden=true;state='running';demo=false;dest=null;keys.clear();stageAge=0;remaining=STEPS[step].duration;hold=currentPairs().map(()=>0);wrongHolds.clear();document.body.classList.remove('demo');updateUI();renderScene();
+  $('result').hidden=true;state='running';demo=false;dest=null;keys.clear();stageAge=0;remaining=STEPS[step].duration;positions=entryPositions.map(p=>({...p}));hold=currentPairs().map(()=>0);wrongHolds.clear();cleaveShown=false;document.body.classList.remove('demo');updateUI();renderScene();
 }
-function finish(){
-  state='cleared';dest=null;keys.clear();if(!demo){stats.clears++;saveStats();}
+function finish(segment=false){
+  state='cleared';finishedSegment=segment;dest=null;keys.clear();if(!demo&&!segment&&practiceStart===0){stats.clears++;saveStats();}
   $('result').className='result-overlay';$('result').hidden=false;$('result').replaceChildren();
   const icon=document.createElement('div');icon.className='result-icon';icon.textContent='◇';
-  const h=document.createElement('h2');h.textContent=demo?'示範完成':'概念支配，完成。';
-  const p=document.createElement('p');p.textContent=demo?'從初次分散到四塔處理，這就是本局的完整解法。換你來走一次。':'分散、補位、合成、踩塔。六個步驟全部完成，試著關閉提示再挑戰一次。';
+  const h=document.createElement('h2');h.textContent=segment?'本段練習完成':demo?'示範完成':'概念支配，完成。';
+  const p=document.createElement('p');p.textContent=segment?'本段處理成功。可重練本段，或使用階段選單前往其他起點。':demo?'從選定起點到最後一輪踩塔，這就是本局的解法。換你來走一次。':'從選定起點到最後一輪踩塔已完成，試著關閉提示再挑戰一次。';
   const actions=document.createElement('div');actions.className='result-actions';
-  const again=document.createElement('button');again.className='primary-button';again.textContent=demo?'親自練習這一局':'再練一局';again.addEventListener('click',()=>{const wasDemo=demo;reset(!wasDemo);begin();});
+  const again=document.createElement('button');again.className='primary-button';again.textContent=segment?'重練本段':demo?'親自練習這一局':'再練一局';again.addEventListener('click',()=>{const wasDemo=demo;reset(segment?false:!wasDemo);begin();});
   actions.append(again);$('result').append(icon,h,p,actions);setDisabledSettings(false);updateUI();renderScene();
 }
 function chooseMode(next){
@@ -74,7 +85,7 @@ function chooseMode(next){
 }
 function taskText(){
   if(step>=6)return ['流程完成','六個步驟全部完成。'];
-  const p=encounter.players[encounter.me],code=p.code,plan=encounter.plans[step][encounter.me],g=GREEK[encounter.typeAfter[encounter.me]];
+  const p=encounter.players[encounter.me],code=p.code,plan=actorPlan(encounter.me),g=GREEK[encounter.typeAfter[encounter.me]];
   const spot=code.length===2?code[1]:null;
   if(step===0){
     if(code.startsWith('sp'))return [code==='sp2'?'去右上 2 點':'去場地中央',code==='sp2'?'二人分攤與長 α 同站；共 2 人。':'三人分攤與長 β／γ 同站；共 3 人。'];
@@ -82,38 +93,41 @@ function taskText(){
     return [code==='lA'?'參與右上二人分攤':'參與中央三人分攤',code==='lA'?'跟二人分攤者站在右上 2 點。':'長 β、長 γ 與三人分攤者站中央。'];
   }
   if(step===1 || step===4){
-    if(plan.partner!==null){const group=step===1?'中央':encounter.secondPairs[0].includes(encounter.me)?'北邊（上面合成）':'南邊（下面合成）';return ['與 '+encounter.players[plan.partner].role+' 合成', '前往'+group+'，靠近搭檔 2 秒，合成'+ELEMENTS[step===1?encounter.first:encounter.second].name+'概念。'];}
-    return ['不參與這輪合成','你的概念不符合本輪塔屬性，保持分離，避免碰到其他完整概念或動物。'];
+    if(plan.tower!==null){const side=(step===1?encounter.side1:encounter.side2)==='west'?'西側／左側':'東側／右側';return ['合成完成，立即踩第 '+(plan.tower+1)+' 塔','不用等待讀條！現在前往自己的塔；左右刀提示亮起後，站在塔的'+side+'邊緣。塔與左右刀在這段讀條結束時一起判定。'];}
+    if(plan.partner!==null){const element=step===1?encounter.first:encounter.second;const group=step===1?'中央':encounter.secondPairs[0].includes(encounter.me)?'北邊（上面合成）':'南邊（下面合成）';return ['與 '+encounter.players[plan.partner].role+' 合成','先看地上「'+ELEMENTS[element].name+'」塔圈，再比對兩人頭上拼圖共同的「'+ELEMENTS[element].name+'」圖塊；前往'+group+'靠近搭檔 2 秒。'];}
+    return ['不用合成，準備躲左右刀','本輪不踩塔，先保持分離；左右刀提示亮起後前往安全半場。'];
   }
   if(step===2 || step===5){const safe=(step===2?encounter.side1:encounter.side2)==='west'?'左側／西側':'右側／東側';return plan.tower!==null?['踩'+(step===2?(plan.tower===0?'北塔':'南塔'):'第 '+(plan.tower+1)+' 塔'),'站在塔的'+safe+'邊緣；每塔只站一人，避開亮起的危險半場。']:['前往安全半場','本輪不用踩塔；站在'+safe+'，遠離其他人的塔。'];}
-  if(encounter.firstPair.includes(encounter.me))return ['中央待機避開爆發','你已完成第一次合成，不可接觸角落的長概念爆發。'];
+  if(encounter.firstPair.includes(encounter.me))return ['右上 2 點附近分散待機','兩名首次合成者在右上方分開站，避開長概念爆發範圍，不要再接概念。'];
   if(code[0]==='l')return ['前往 '+spot+' 點外側','長 '+GREEK[spot]+' 到角落引爆，將概念複製給內側同組玩家。'];
   return ['去 '+encounter.typeAfter[encounter.me]+' 點內側','接長 '+g+' 的爆發，取得完整 '+g+' 概念。'+(code.startsWith('sp')?'補位依第一次塔色決定。':'你沒參與首次合成，留在原角落內側。')];
 }
 function updateUI(){
-  const s=Math.min(step,5),p=encounter.players[encounter.me],status=concept(encounter,s,encounter.me);
+  const s=Math.min(step,5),p=encounter.players[encounter.me],status=actorConcept(encounter.me);
   $('your-concept').textContent=label(p.code);$('your-role').textContent=p.role+' · YOU';
   const col=colour[p.code[1]]||'#b6d4bd';
   $('concept-icon').textContent=p.code==='sp2'?'Ⅱ':p.code==='sp3'?'Ⅲ':GREEK[p.code[1]];$('concept-icon').style.color=col;$('concept-icon').style.borderColor=col+'88';
-  $('current-concept').textContent=state==='idle'?'等待概念支配':state==='cleared'?'概念解消':status.text;
+  $('current-concept').textContent=state==='cleared'?(finishedSegment?'本段完成':'概念解消'):state==='idle'&&step===0?'等待概念支配':status.text;
   $('training').classList.toggle('selected',mode==='training');$('challenge').classList.toggle('selected',mode==='challenge');
   $('training').setAttribute('aria-pressed',mode==='training');$('challenge').setAttribute('aria-pressed',mode==='challenge');
-  $('mode-note').textContent=mode==='training'?'不限時間，準備好後手動結算。':'每步倒數結算。可暫停、調整速度。';
+  $('mode-note').textContent=mode==='training'?'合成滿兩秒立即生效，可接著踩塔。':'合成、踩塔與左右刀共用一段倒數。';
   $('state-badge').textContent=({idle:'準備就緒',running:demo?'自動示範':'演練中',paused:'已暫停',failed:'概念失敗',review:'查看解法',cleared:'演練完成'})[state];
   $('state-badge').className='state-badge '+(state==='failed'?'failed':state==='running'?'running':'');
-  $('step-number').textContent=String(Math.min(step+1,6)).padStart(2,'0');
-  $('timeline').replaceChildren(...STEPS.map((st,i)=>{
-    const el=document.createElement('div');el.className='timeline-step '+(step===i?'current':step>i?'done':'');if(step===i)el.setAttribute('aria-current','step');
-    const dot=document.createElement('span');dot.className='step-dot';dot.textContent=step>i?'✓':String(i+1).padStart(2,'0');
+  $('step-number').textContent=String(Math.min(ROUND_STEPS.indexOf(roundBase(s))+1,4)).padStart(2,'0');
+  $('stage-select').value=String(Math.min(step,5));$('previous-stage').disabled=step===0;$('next-stage').disabled=step>=4;
+  $('timeline').replaceChildren(...ROUND_STEPS.map((i,n)=>{
+    const st=STEPS[i],el=document.createElement('button'),current=roundBase(s)===i&&step<6;
+    el.type='button';el.className='timeline-step '+(current?'current':step>i?'done':'');if(current)el.setAttribute('aria-current','step');el.addEventListener('click',()=>jumpToStage(i));
+    const dot=document.createElement('span');dot.className='step-dot';dot.textContent=step>i&&!current?'✓':String(n+1).padStart(2,'0');
     const content=document.createElement('div');const strong=document.createElement('strong');strong.textContent=st.name;const small=document.createElement('small');small.textContent=st.en;content.append(strong,small);el.append(dot,content);return el;
   }));
   const [title,body]=taskText(),hints=$('hints').checked;
   $('task-title').textContent=hints||demo?title:'自行判讀概念';$('task-body').textContent=hints||demo?body:'提示已關閉。觀察塔色、概念狀態與隊友位置，完成本步處理。';
   const el=step>=1?(step<=3?encounter.first:encounter.second):null;
   $('tower-element').textContent=el?ELEMENTS[el].symbol+' '+ELEMENTS[el].name+'塔':'等待生成';$('tower-element').style.color=el?ELEMENTS[el].color:'#b4c6ba';
-  $('tower-formula').textContent=el?(hints||demo?ELEMENTS[el].pair.map(x=>GREEK[x]).join(' + ')+' → '+ELEMENTS[el].animal+'概念':'觀察概念組合，選擇正確搭檔'):'先觀察你的起始概念';
+  $('tower-formula').textContent=el?(hints||demo?'找兩人拼圖都含有的「'+ELEMENTS[el].name+'」圖塊 → '+ELEMENTS[el].animal+'概念':'觀察地上塔圈，找兩人的共同拼圖圖塊'):'先觀察你的起始概念';
   const primary=$('primary');
-  primary.textContent=state==='idle'?'▶ 開始練習':state==='cleared'?'↻ 再練一局':state==='failed'||state==='review'?'↻ 重試本步':state==='paused'?'▶ 繼續練習':demo?'示範中…':mode==='challenge'?'倒數結算中…':'✓ 結算本步';
+  primary.textContent=state==='idle'?'▶ 開始練習':state==='cleared'?(finishedSegment?'↻ 重練本段':'↻ 再練一局'):state==='failed'||state==='review'?'↻ 重試本步':state==='paused'?'▶ 繼續練習':demo?'示範中…':mode==='challenge'?'倒數結算中…':isFusionRound(step)?'✓ 結算踩塔與左右刀':'✓ 結算本步';
   primary.disabled=state==='running'&&(mode==='challenge'||demo);
   $('pause').disabled=!['running','paused'].includes(state);$('pause').textContent=state==='paused'?'▷':'Ⅱ';
   $('demo').textContent=demo&&['running','paused'].includes(state)?'□ 停止示範':'▷ 觀看示範';
@@ -122,7 +136,7 @@ function updateUI(){
   saveStats();updateTimer();
 }
 function updatePuzzleReadout(){
-  const c=concept(encounter,Math.min(step,5),encounter.me),diagram=$('my-puzzle');
+  const c=actorConcept(encounter.me),diagram=$('my-puzzle');
   if(step>=6){diagram.replaceChildren();$('puzzle-description').textContent='概念解消，演練完成。';diagram.setAttribute('aria-label','概念已解消');return;}
   if(c.kind==='concept'){
     const tower=step<=3?encounter.first:encounter.second;
@@ -146,13 +160,13 @@ function updateTimer(){
   const pairIndex=currentPairs().findIndex(pair=>pair.includes(encounter.me));
   $('fusion-state').textContent=pairIndex>=0?hold[pairIndex]>=1.98?'✓ 合成完成':'合成進度 '+Math.min(2,hold[pairIndex]||0).toFixed(1)+' / 2.0 秒':'保持距離，等待隊友合成';
   const cast=castModel({state,mode,demo,duration:STEPS[Math.min(step,5)].duration,age:stageAge,remaining});
-  $('cast-name').textContent=step>=6?'概念解消':STEPS[step].name;
+  $('cast-name').textContent=finishedSegment?'本段完成':step>=6?'概念解消':isFusionRound(step)?(step===1?'兩塔＋左右刀結算':'四塔＋左右刀結算'):STEPS[step].name;
   $('cast-seconds').replaceChildren(document.createTextNode(cast.seconds.toFixed(1)));
   const unit=document.createElement('small');unit.textContent='s';$('cast-seconds').append(unit);
   $('cast-fill').style.width=(cast.progress*100)+'%';
   $('cast-track').setAttribute('aria-valuenow',String(Math.round(cast.progress*100)));
   $('cast-track').setAttribute('aria-valuetext',cast.status+'，剩餘 '+cast.seconds.toFixed(1)+' 秒');
-  $('cast-status').textContent=cast.status;$('cast-hud').dataset.state=state;$('cast-hud').classList.toggle('cast-ready',cast.waiting);
+  $('cast-status').textContent=finishedSegment?'本段練習完成':isFusionRound(step)&&state==='running'&&!cast.waiting?'合成後立即踩塔 · '+(showCleave()?'左右刀已亮起':'留意稍後左右刀'):(cast.status);$('cast-hud').dataset.state=state;$('cast-hud').classList.toggle('cast-ready',cast.waiting);
   $('link-cast').hidden=pairIndex<0||step>=6;
   if(pairIndex>=0){const h=Math.min(2,hold[pairIndex]||0);$('link-fill').style.width=(h/2*100)+'%';$('link-seconds').textContent=h.toFixed(1)+' / 2.0s';$('link-label').textContent=h>=1.98?'連結完成':'與搭檔接觸合成';}
 }
@@ -166,18 +180,33 @@ function buildSprites(){
 }
 function renderScene(){
   const s=Math.min(step,5);$('hazards').replaceChildren();$('target-layer').replaceChildren();
-  if(s===2 || s===5){
-    const side=s===2?encounter.side1:encounter.side2,el=ELEMENTS[s===2?encounter.first:encounter.second];
+  if(showCleave()){
+    const side=s<=2?encounter.side1:encounter.side2;
     const danger=svg('rect',{x:side==='west'?300:48,y:48,width:252,height:504,fill:'#e49f5826',stroke:'#f2b46d66','stroke-width':1});$('hazards').append(danger);
     // Repeated diagonal lines make the danger legible without relying only on colour.
     for(let y=-200;y<700;y+=25)$('hazards').append(svg('path',{d:`M${side==='west'?300:48} ${y}l252 252`,stroke:'#f0ae6333','stroke-width':1}));
     $('hazards').append(svg('text',{x:side==='west'?430:170,y:115,fill:'#e4b37c','font-size':10,'letter-spacing':2,'text-anchor':'middle'},'危險半場'));
-    const ys=s===2?[26,74]:[15,38,62,85];ys.forEach((y,k)=>{
-      const c=px({x:50,y}),g=svg('g');g.append(svg('circle',{cx:c.x,cy:c.y,r:45,fill:el.color+'12',stroke:el.color+'88','stroke-width':1.5}),svg('circle',{cx:c.x,cy:c.y,r:37,fill:'none',stroke:el.color+'55','stroke-dasharray':'2 5'}),svg('path',{d:`M${c.x-20} ${c.y}h40M${c.x} ${c.y-20}v40`,stroke:el.color+'33'}),svg('text',{x:c.x,y:c.y+5,'text-anchor':'middle','font-size':17,fill:el.color},el.symbol),svg('text',{x:c.x,y:c.y+31,'text-anchor':'middle','font-size':7,fill:el.color},String(k+1)));$('hazards').append(g);
+  }
+  // 塔圈從「選合成對象」時就存在，而不是踩塔階段才突然出現。
+  if([1,2,4,5].includes(s)){
+    const el=ELEMENTS[s<=2?encounter.first:encounter.second];
+    const ys=s<=2?[26,74]:[15,38,62,85];
+    ys.forEach((y,k)=>{
+      const c=px({x:50,y}),g=svg('g',{'class':'floor-tower','aria-label':`第 ${k+1} 座${el.name}塔圈`});
+      g.append(
+        svg('circle',{cx:c.x,cy:c.y,r:51,fill:el.color+'42',filter:'url(#softglow)'}),
+        svg('circle',{cx:c.x,cy:c.y,r:46,fill:'#14251fdd',stroke:el.color,'stroke-width':4}),
+        svg('circle',{cx:c.x,cy:c.y,r:39,fill:el.color+'29',stroke:'#f7f1d8','stroke-width':1.6,'stroke-dasharray':'5 5'}),
+        svg('circle',{cx:c.x,cy:c.y,r:32,fill:'none',stroke:el.color+'cc','stroke-width':1.8}),
+        svg('text',{x:c.x,y:c.y-3,'text-anchor':'middle','font-size':22,'font-weight':'800',fill:'#f4fff8',stroke:'#132a24','stroke-width':2,'paint-order':'stroke'},el.name),
+        svg('text',{x:c.x,y:c.y+15,'text-anchor':'middle','font-size':11,'font-weight':'700',fill:el.color},'塔圈'),
+        svg('text',{x:c.x,y:c.y+34,'text-anchor':'middle','font-size':10,fill:'#e8e2c3'},String(k+1))
+      );
+      $('hazards').append(g);
     });
   }
   if(($('hints').checked||demo)&&step<6){
-    const p=encounter.plans[step][encounter.me],target=px(p.target);
+    const p=actorPlan(encounter.me),target=px(p.target);
     const line=svg('path',{'class':'target-line',id:'hint-path'});$('target-layer').append(line,svg('circle',{cx:target.x,cy:target.y,r:19,'class':'target-circle'}),svg('path',{d:`M${target.x-5} ${target.y}h10M${target.x} ${target.y-5}v10`,stroke:'#adddcd88','stroke-width':1}),svg('text',{x:target.x,y:target.y+37,'class':'target-word'},'目標位置'));
   }
   $('effect-layer').replaceChildren();
@@ -186,7 +215,7 @@ function renderScene(){
 function drawPlayers(){
   const s=Math.min(step,5);
   positions.forEach((p,i)=>{
-    const el=sprite[i],player=encounter.players[i],c=concept(encounter,s,i),here=px(p),isYou=i===encounter.me;
+    const el=sprite[i],player=encounter.players[i],c=actorConcept(i),here=px(p),isYou=i===encounter.me;
     const near=positions.map((p,j)=>({p,j})).filter(o=>distance(p,o.p)<3).map(o=>o.j);
     const shift=near.length>1?(near.indexOf(i)-(near.length-1)/2)*11:0;
     el.g.setAttribute('transform',`translate(${here.x+shift} ${here.y})`);
@@ -205,7 +234,7 @@ function drawPlayers(){
     const shared=showPuzzle?PUZZLES[c.type].map(t=>TILES[t.key].name).join('、'):'';
     el.g.setAttribute('aria-label',player.role+(isYou?' 你':'')+' '+c.text+(shared?'，拼圖：'+shared:''));
   });
-  const path=$('hint-path');if(path){const a=px(positions[encounter.me]),b=px(encounter.plans[s][encounter.me].target);path.setAttribute('d',`M${a.x} ${a.y}L${b.x} ${b.y}`);}
+  const path=$('hint-path');if(path){const a=px(positions[encounter.me]),b=px(actorPlan(encounter.me).target);path.setAttribute('d',`M${a.x} ${a.y}L${b.x} ${b.y}`);}
   const effects=$('effect-layer');effects.replaceChildren();
   if($('ranges').checked&&(s===0||s===3)&&step<6){
     encounter.players.forEach((player,i)=>{if(player.code.length!==2||player.code[0]!==(s===0?'s':'l'))return;const p=px(positions[i]);effects.append(svg('circle',{cx:p.x,cy:p.y,r:38*5.04,fill:'#c59af409',stroke:'#c59af488','stroke-width':1,'stroke-dasharray':'5 6','clip-path':'url(#floor-clip)','pointer-events':'none'}));});
@@ -219,19 +248,21 @@ function animate(time){
   const realDt=Math.min(.05,(time-last)/1000||0);last=time;const dt=realDt*Number($('speed').value);
   if(state==='running'){
     stageAge+=dt;simulationElapsed+=dt;
-    positions=positions.map((p,i)=>i!==encounter.me||demo?move(p,encounter.plans[step][i].target,dt*27):p);
+    positions=positions.map((p,i)=>i!==encounter.me||demo?move(p,actorPlan(i).target,dt*27):p);
     if(!demo){
       let x=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0),y=(keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0);
       if(x||y){dest=null;const n=Math.hypot(x,y);positions[encounter.me]={x:Math.max(1,Math.min(99,positions[encounter.me].x+x/n*dt*27)),y:Math.max(1,Math.min(99,positions[encounter.me].y+y/n*dt*27))};}
       else if(dest)positions[encounter.me]=move(positions[encounter.me],dest,dt*27);
     }
-    const pairs=currentPairs();pairs.forEach(([a,b],k)=>{hold[k]=distance(positions[a],positions[b])<=6?Math.min(2,hold[k]+dt):0;});
+    const pairs=currentPairs(),before=hold;hold=tickFusion(encounter,step,positions,hold,dt);
+    if(hold.some((h,k)=>h>=2&&before[k]<2)){updateUI();renderScene();}
+    if(isFusionRound(step)&&stageAge>=6&&!cleaveShown){cleaveShown=true;updateUI();renderScene();}
     // Concepts require sustained contact; passing through an unrelated player does not merge instantly.
     if(step===1||step===4){
       let accidental=null;
       for(let i=0;i<8;i++)for(let j=i+1;j<8;j++){
         if(pairs.some(p=>p.includes(i)&&p.includes(j)))continue;
-        const a=concept(encounter,step,i),b=concept(encounter,step,j),k=i+':'+j;
+        const a=actorConcept(i),b=actorConcept(j),k=i+':'+j;
         if(['debuff','none'].includes(a.kind)||['debuff','none'].includes(b.kind))continue;
         const amount=distance(positions[i],positions[j])<=6?(wrongHolds.get(k)||0)+dt:0;wrongHolds.set(k,amount);
         if(amount>=2)accidental={player:i===encounter.me?i:j,message:'與非搭檔 '+encounter.players[i===encounter.me?j:i].role+' 持續接觸，發生非預期合成。'};
@@ -240,7 +271,7 @@ function animate(time){
     }
     if(state==='running'){
       if(demo){
-        const allReady=positions.every((p,i)=>distance(p,encounter.plans[step][i].target)<.3);
+        const allReady=positions.every((p,i)=>distance(p,actorPlan(i).target)<.3);
         remaining=Math.max(0,STEPS[step].duration-stageAge);
         if(allReady&&remaining<=0&&hold.every(h=>h>=1.98))resolve();
       }else if(mode==='challenge'){remaining-=dt;if(remaining<=0)resolve();}
@@ -256,7 +287,11 @@ ROLES.forEach(role=>{
   b.addEventListener('click',()=>{$('role').replaceChildren(new Option(role,role,true,true));document.querySelectorAll('#role-picker button').forEach(el=>{el.classList.toggle('selected',el.dataset.role===role);el.setAttribute('aria-pressed',el.dataset.role===role);});reset(true);});$('role-picker').append(b);
 });
 $('debuff').addEventListener('change',()=>reset(true));$('training').addEventListener('click',()=>chooseMode('training'));$('challenge').addEventListener('click',()=>chooseMode('challenge'));
-$('primary').addEventListener('click',()=>{if(state==='idle')begin();else if(state==='cleared'){reset(true);begin();}else if(['failed','review'].includes(state))retryStep();else if(state==='paused')togglePause();else resolve();});
+$('primary').addEventListener('click',()=>{if(state==='idle')begin();else if(state==='cleared'){reset(!finishedSegment);begin();}else if(['failed','review'].includes(state))retryStep();else if(state==='paused')togglePause();else resolve();});
+$('stage-select').addEventListener('change',()=>jumpToStage(Number($('stage-select').value)));
+$('previous-stage').addEventListener('click',()=>{if(step===2||step===5){jumpToStage(step-1);return;}const base=roundBase(Math.min(step,5));jumpToStage(ROUND_STEPS[Math.max(0,ROUND_STEPS.indexOf(base)-1)]);});
+$('next-stage').addEventListener('click',()=>{const base=roundBase(Math.min(step,5));jumpToStage(ROUND_STEPS[Math.min(3,ROUND_STEPS.indexOf(base)+1)]);});
+$('repeat-stage').addEventListener('click',()=>jumpToStage(Math.min(step,5)));
 $('retry').addEventListener('click',()=>{reset(false);toast('已保留本局分配，重新開始。');});$('randomize').addEventListener('click',()=>{reset(true);toast('已重新抽籤。');});$('pause').addEventListener('click',togglePause);
 $('demo').addEventListener('click',()=>{if(demo&&['running','paused'].includes(state)){reset(false);return;}reset(false);begin(true);});
 for(const id of ['hints','ranges'])$(id).addEventListener('change',()=>{updateUI();renderScene();});

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createEncounter,validate,CODES,ROLES,concept,ELEMENTS} from '../dist/engine.mjs';
+import {createEncounter,validate,CODES,ROLES,concept,ELEMENTS,STEPS,ROUND_STEPS,nextStep,checkpointPositions,fusionPairs,tickFusion,liveConcept,livePlan,validateRound,distance} from '../dist/engine.mjs';
 import {PUZZLES,puzzleMarkup,castModel} from '../dist/ui-model.mjs';
 test('head puzzles share exactly the tower element required by each legal synthesis',()=>{
   for(const [element,{pair}] of Object.entries(ELEMENTS)){
@@ -25,6 +25,56 @@ test('cast HUD distinguishes manual waiting, automatic countdown, pause and comp
   assert.equal(castModel({...base,state:'idle'}).progress,0);
   assert.equal(castModel({...base,state:'cleared'}).progress,1);
 });
+
+test('synthesis latches immediately and each completed pair can leave for its tower independently',()=>{
+  const e=createEncounter({first:'wind',second:'water'});
+  let positions=e.plans[4].map(p=>({...p.target})),holds=[0,0];
+  const second=e.secondPairs[1];positions[second[0]]={x:5,y:5};
+  holds=tickFusion(e,4,positions,holds,2);
+  assert.deepEqual(holds,[2,0]);
+  const i=e.secondPairs[0][0];assert.equal(liveConcept(e,4,i,holds).kind,'animal');
+  assert.deepEqual(livePlan(e,4,i,holds).target,e.plans[5][i].target);
+  assert.equal(liveConcept(e,4,second[0],holds).kind,'concept');
+  positions[i]={...e.plans[5][i].target};holds=tickFusion(e,4,positions,holds,.1);
+  assert.equal(holds[0],2,'walking apart must not undo a completed synthesis');
+  assert.ok(validateRound(e,4,e.plans[5].map(p=>p.target),holds).some(issue=>issue.message.includes('尚未完成合成')));
+  assert.deepEqual(validateRound(e,4,e.plans[5].map(p=>p.target),[2,2]),[]);
+});
+
+test('all six selectable checkpoints restore the required positions and concepts without rerolling',()=>{
+  const e=createEncounter({role:'D1',fixed:'sp2',first:'water',second:'lightning'});
+  const allocation=e.players.map(p=>p.code).join(',');
+  for(let step=0;step<6;step++){
+    const positions=checkpointPositions(e,step);assert.equal(positions.length,8);
+    positions[0].x=-100;
+    assert.ok(checkpointPositions(e,step)[0].x>=0,'checkpoint positions must be deep copies');
+  }
+  assert.equal(liveConcept(e,1,e.firstPair[0],[]).kind,'concept');
+  assert.equal(liveConcept(e,2,e.firstPair[0],[]).kind,'animal');
+  const sp=e.players.findIndex(p=>p.code==='sp2');assert.equal(liveConcept(e,4,sp,[]).kind,'concept');
+  assert.equal(liveConcept(e,5,e.secondPairs[0][0],[]).kind,'animal');
+  assert.equal(e.players.map(p=>p.code).join(','),allocation);
+  assert.deepEqual(ROUND_STEPS,[0,1,3,4]);assert.equal(nextStep(1),3);assert.equal(nextStep(4),6);
+});
+
+test('both continuous rounds can fuse, split and soak before their shared deadline for every tower/cleave combination',()=>{
+  for(const first of Object.keys(ELEMENTS))for(const second of Object.keys(ELEMENTS))for(const side1 of ['west','east'])for(const side2 of ['west','east']){
+    const e=createEncounter({first,second,side1,side2});
+    for(const step of [1,4]){
+      let positions=checkpointPositions(e,step),holds=fusionPairs(e,step).map(()=>0),switched=false;
+      for(let t=0;t<STEPS[step].duration;t+=.025){
+        positions=positions.map((p,i)=>{
+          const target=livePlan(e,step,i,holds).target,d=distance(p,target),amount=.025*27;
+          return d<=amount?{...target}:{x:p.x+(target.x-p.x)/d*amount,y:p.y+(target.y-p.y)/d*amount};
+        });
+        holds=tickFusion(e,step,positions,holds,.025);
+        if(holds.every(h=>h===2)&&t<STEPS[step].duration-2)switched=true;
+      }
+      assert.ok(switched,'completed synthesis must precede the tower deadline');
+      assert.deepEqual(validateRound(e,step,positions,holds),[],JSON.stringify({first,second,side1,side2,step}));
+    }
+  }
+});
 test('all eight starting states are selectable from valid option tags',()=>{
   const html=readFileSync(new URL('../dist/index.html',import.meta.url),'utf8');
   const values=[...html.matchAll(/<option\s+value="([^"]+)"/g)].map(m=>m[1]);
@@ -41,6 +91,25 @@ test('all tower colours, cleave combinations and player roles can complete all s
     count++;
   }
   assert.equal(count,2304);
+});
+test('first fusion partners wait apart near two oclock and outside all long concept blasts',()=>{
+  for(const first of Object.keys(ELEMENTS)){
+    const e=createEncounter({first});
+    const positions=e.plans[3].map(p=>p.target);
+    const [a,b]=e.firstPair.map(i=>positions[i]);
+    assert.ok(a.x>65&&b.x>65&&a.y<30&&b.y<30,'both partners should wait in upper-right');
+    assert.ok(Math.hypot(a.x-b.x,a.y-b.y)>10,'fusion partners must wait apart');
+    assert.deepEqual(validate(e,3,positions),[]);
+  }
+});
+test('floor towers are shown in synthesis phases and both guides use the actual puzzle icons',()=>{
+  const app=readFileSync(new URL('../dist/app.js',import.meta.url),'utf8');
+  const html=readFileSync(new URL('../dist/index.html',import.meta.url),'utf8');
+  assert.match(app,/\[1,2,4,5\]\.includes\(s\)/);
+  assert.match(app,/guide-recipes/);
+  assert.equal((html.match(/data-puzzle="[ABC]"/g)||[]).length,6);
+  assert.match(html,/id="guide-recipes"/);
+  assert.match(html,/共同圖塊/);
 });
 test('missing stacks and overlapping explosions fail',()=>{
   const e=createEncounter();const positions=e.plans[0].map(p=>({...p.target}));
