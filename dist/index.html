@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10171b">
+  <meta name="description" content="依菓子攻略製作的 FF14 P8S 本體第一次概念支配走位模擬器。單人控制、隨機概念、合成踩塔與分段練習。">
+  <title>概念實驗室 · P8S 第一次概念支配</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50'%3E%3Cpath fill='%239edbc8' d='M25 2 48 25 25 48 2 25zm0 9L11 25l14 14 14-14z'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css"><script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="./" aria-label="概念實驗室首頁"><span class="brand-icon">◇</span><span>概念實驗室<small>CONCEPT LAB</small></span></a><nav aria-label="頁面導航"><a href="#simulator" class="active">走位模擬</a><button id="guide-open">攻略筆記 <span>↗</span></button></nav><span class="header-tag"><i></i> P8S · HIGH CONCEPT I</span></header>
+  <main id="simulator">
+    <div class="page-heading"><div><p class="eyebrow">FINAL FANTASY XIV <span>/</span> ABYSSOS: THE EIGHTH CIRCLE · SAVAGE</p><h1>概念支配 <span>I</span><span class="title-divider"></span><em>拼圖練習</em></h1><p class="intro">讀懂概念，找到搭檔，走好每一步。<span>本體第一次概念支配 · 菓子攻略</span></p></div><button class="quiet-button" id="help-open"><span>?</span> 操作說明</button></div>
+    <div class="workspace">
+      <aside class="config-panel panel">
+        <div class="panel-label">練習設定 <span>01</span></div>
+        <label class="field-label" for="role">你的隊伍位置</label><div class="role-picker" id="role-picker" role="group" aria-label="隊伍位置"></div><select id="role" hidden aria-label="隊伍位置"><option>D1</option></select>
+        <label class="field-label" for="debuff">指定起始狀態</label><select id="debuff"><option value="random">隨機分配</option><option value="sA">短 α</option><option value="sB">短 β</option><option value="sC">短 γ</option><option value="lA">長 α</option><option value="lB">長 β</option><option value="lC">長 γ</option><option value="sp2">二人分攤</option><option value="sp3">三人分攤</option></select>
+        <label class="field-label">練習模式</label><div class="segmented" role="group" aria-label="練習模式"><button id="training" class="selected" aria-pressed="true">引導練習</button><button id="challenge" aria-pressed="false">限時挑戰</button></div><p class="field-note" id="mode-note">不限時間，準備好後手動結算。</p>
+        <div class="speed-row"><label for="speed">演練速度</label><select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option></select></div>
+        <div class="your-status"><div class="tiny-label">你的起始概念</div><div class="concept-heading"><div id="concept-icon" class="concept-icon">α</div><div><strong id="your-concept">短 α</strong><small id="your-role">D1 · YOU</small></div></div><div class="status-bottom"><span id="current-concept">等待概念支配</span><span class="mint-dot"></span></div></div>
+        <div class="switches"><label><input type="checkbox" id="hints" checked><span class="switch"></span>顯示目標與提示</label><label><input type="checkbox" id="ranges"><span class="switch"></span>顯示爆發判定範圍</label></div>
+        <div class="session-stat"><div><strong id="attempts">0</strong><span>本機練習次數</span></div><div><strong id="clears">0</strong><span>完成次數</span></div></div>
+      </aside>
+      <section class="arena-panel panel" aria-label="模擬場地">
+        <div class="arena-toolbar"><div class="arena-title"><span class="arena-dot"></span>HEPHAISTOS <span class="arena-subtitle">概念演練場</span></div><span id="state-badge" class="state-badge">準備就緒</span></div>
+        <div class="arena-wrap">
+          <div class="arena-top-label"><span></span> N <b>◆</b> BOSS <span></span></div>
+          <svg id="arena" viewBox="0 0 600 600" role="img" aria-label="可操作的俯視場地，點擊移動你的角色" tabindex="0">
+            <defs>
+              <radialGradient id="floor-glow"><stop stop-color="#4a4939"/><stop offset="1" stop-color="#282b27"/></radialGradient>
+              <pattern id="tile" width="126" height="126" patternUnits="userSpaceOnUse" x="48" y="48"><path d="M0 0H126V126H0Z" fill="none" stroke="#b19b65" stroke-opacity=".3" stroke-width="1.4"/><path d="M63 7 119 63 63 119 7 63Z M63 20 106 63 63 106 20 63Z M63 44 82 63 63 82 44 63Z" fill="none" stroke="#b19b65" stroke-opacity=".11"/><path d="m0 8 8-8m110 0 8 8M0 118l8 8m110 0 8-8" stroke="#b19b65" stroke-opacity=".3" fill="none"/></pattern>
+              <clipPath id="floor-clip"><rect x="48" y="48" width="504" height="504"/></clipPath>
+              <filter id="softglow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="3"/></filter>
+            </defs>
+            <rect x="39" y="39" width="522" height="522" fill="none" stroke="#8b8059" stroke-opacity=".17"/>
+            <rect x="48" y="48" width="504" height="504" fill="url(#floor-glow)" stroke="#a78e55" stroke-width="2"/>
+            <rect x="48" y="48" width="504" height="504" fill="url(#tile)"/>
+            <path d="M300 48V552M48 300H552" stroke="#bbaa6e" stroke-opacity=".18" stroke-dasharray="3 6"/>
+            <path d="M48 68V48H68M532 48H552V68M552 532V552H532M68 552H48V532" stroke="#d0b778" stroke-width="3" fill="none"/>
+            <g id="hazards" clip-path="url(#floor-clip)"></g>
+            <g id="waymarks" font-family="Georgia,serif" font-weight="bold" font-size="20" text-anchor="middle">
+              <text x="65" y="74" fill="#df929c">A</text><text x="65" y="544" fill="#e3c972">B</text><text x="537" y="544" fill="#88c1e8">C</text>
+              <text x="426" y="183" fill="#dacb88" opacity=".75">2</text><text x="309" y="310" fill="#bda5dc" opacity=".65">3</text><text x="183" y="183" fill="#d49dc8" opacity=".65">4</text><text x="301" y="184" fill="#c7bbdc" opacity=".65">D</text>
+            </g>
+            <g id="target-layer"></g><g id="players"></g><g id="effect-layer"></g>
+            <text x="23" y="305" class="compass">W</text><text x="578" y="305" class="compass">E</text><text x="300" y="581" class="compass">S</text>
+          </svg>
+          <div id="result" class="result-overlay" hidden aria-live="polite"></div>
+        </div>
+        <div class="arena-footer"><span><i class="legend-you"></i> 你 <i class="legend-npc"></i> 自動隊友 <i class="legend-target"></i> 目標位置</span><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / 點擊移動</span></div>
+        <div class="playback"><button id="primary" class="primary-button"><span>▶</span> 開始練習</button><button id="pause" class="icon-button" aria-label="暫停或繼續" title="暫停 / 繼續" disabled>Ⅱ</button><button id="retry" class="icon-button" aria-label="重練本局" title="重練本局">↻</button><button id="randomize" class="text-button">重新抽籤</button><div class="playback-divider"></div><button id="demo" class="text-button">▷ 觀看示範</button></div>
+      </section>
+      <aside class="flow-panel panel">
+        <div class="panel-label">機制時間軸 <span>02</span></div>
+        <div class="phase-number"><span id="step-number">01</span><small>/ 06</small><div id="timer">∞<small>不限時</small></div></div>
+        <div id="timeline" class="timeline"></div>
+        <div class="personal-task"><p class="tiny-label"><span>◇</span> 本步行動</p><h3 id="task-title">前往 A 點</h3><p id="task-body">短 α 在左上獨立引爆。</p><div id="fusion-state" hidden></div></div>
+        <div class="tower-preview"><span class="tiny-label">本輪塔屬性</span><strong id="tower-element">等待生成</strong><p id="tower-formula">先觀察你的起始概念</p></div>
+      </aside>
+    </div>
+    <div class="below-workspace"><section class="recipe-strip"><div class="recipe-intro"><span>合成速查</span><small>相同概念不可合成</small></div><div class="recipe"><b class="alpha">α</b><i>+</i><b class="beta">β</b><i>→</i><span class="wind">≋ 風・鳥</span></div><div class="recipe"><b class="alpha">α</b><i>+</i><b class="gamma">γ</b><i>→</i><span class="water">◇ 水・水妖</span></div><div class="recipe"><b class="beta">β</b><i>+</i><b class="gamma">γ</b><i>→</i><span class="lightning">ϟ 雷・獨角獸</span></div></section><p class="simulation-note">菓子站位 · 六步教學拆解<br><span>分段計時與範圍為練習用近似值</span></p></div>
+    <footer class="site-footer"><span>CONCEPT LAB <i>·</i> 將複雜的機制，拆成可練習的每一步。</span><a href="https://www.bilibili.com/video/BV1q3411Q7jg/?t=540" target="_blank" rel="noreferrer">參考：菓子 P8S 攻略 ↗</a></footer>
+  </main>
+  <dialog id="guide-dialog"><div class="dialog-header"><div><p class="eyebrow">GUOZI STRATEGY NOTES</p><h2>第一次概念支配 · 攻略筆記</h2></div><button class="close-dialog icon-button" aria-label="關閉">×</button></div><div class="dialog-body"><p class="source-note">依你提供的菓子攻略影片 09:00–12:10 核對配置。以下 A／B／C 指場上標點，不是隨機隊伍位置。</p><div class="guide-columns"><section><h3>01 起始分散</h3><p>短 α：左上 A。<br>短 β：左下 B。<br>短 γ：右下 C。</p><p>二人分攤＋長 α：右上 2 點。<br>三人分攤＋長 β＋長 γ：中央。</p><h3>02 第一輪合成</h3><p>看兩座塔的屬性，對應的短概念在中央合成；依 A → B → C 的順序，前者踩北塔，後者踩南塔。所有人躲半場攻擊。</p></section><section><h3>03 接長概念的口訣</h3><table><thead><tr><th>首輪塔</th><th>二人</th><th>三人</th><th>短概念留</th></tr></thead><tbody><tr><td class="wind">風</td><td>A</td><td>B</td><td>C</td></tr><tr><td class="water">水</td><td>A</td><td>C</td><td>B</td></tr><tr><td class="lightning">雷</td><td>B</td><td>C</td><td>A</td></tr></tbody></table><p>長 α／β／γ 去外側 A／B／C。二人、三人分攤者依表補進空位，原本沒合成的短概念留在自己的角落內側，接到同類長概念爆發。已合成者留中央避開爆發。</p><h3>04 第二輪合成與四塔</h3><p>內側的複製者／剩餘短概念「上面合成」，負責北邊兩塔。外側長概念「下面合成」，負責南邊兩塔。每組同樣依 A → B → C 排列塔優先度。</p></section></div><p class="source-note">模擬器著重分配、補位、合成與踩塔決策；不模擬傷害、治療與網路延遲。六步是教學拆分，限時挑戰也使用分段時限，並非遊戲原始時間軸。半場攻擊以場地亮區提示。</p></div></dialog>
+  <dialog id="help-dialog"><div class="dialog-header"><h2>開始你的拼圖練習</h2><button class="close-dialog icon-button" aria-label="關閉">×</button></div><div class="dialog-body help-body"><p><strong>1. 選擇角色與概念</strong><br>你控制一名隊員，其餘七名隊友會自動依攻略移動。設定變更會重新開始一局。</p><p><strong>2. 點擊場地，或用 WASD／方向鍵移動</strong><br>你的角色有亮色外環與 YOU 標記。虛線與圓圈表示本步建議位置；合成需要與搭檔靠近並維持 2 秒。</p><p><strong>3. 準備好，按「結算本步」</strong><br>引導模式不限時；限時挑戰會自動結算，可用空白鍵暫停。失敗時會顯示原因，並可重試同一步或重練整局。</p><p><strong>4. 看不懂時，觀看示範</strong><br>示範會自動操作八人，走完本局全部流程，不列入練習次數。可隨時停止。</p><p class="source-note">手機可點擊場地移動。所有進度統計只儲存在目前瀏覽器；使用無痕模式或封鎖儲存時，統計僅保留在本次開啟期間。</p></div></dialog>
+  <div id="toast" role="status" hidden></div>
+</body>
+</html>

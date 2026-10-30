@@ -1,0 +1,6 @@
+{
+  "name": "p8s-concept-lab",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test tests/engine.test.mjs", "start": "node server.mjs" }
+}
