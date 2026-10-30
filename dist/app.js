@@ -1,4 +1,5 @@
 import { ROLES,CODES,GREEK,ELEMENTS,STEPS,STRATEGY,createEncounter,label,concept,validate,distance } from './engine.mjs';
+import {PUZZLES,TILES,puzzleMarkup,castModel} from './ui-model.mjs';
 
 const $=id=>document.getElementById(id);
 const arena=$('arena'), ns='http://www.w3.org/2000/svg';
@@ -117,7 +118,24 @@ function updateUI(){
   $('pause').disabled=!['running','paused'].includes(state);$('pause').textContent=state==='paused'?'▷':'Ⅱ';
   $('demo').textContent=demo&&['running','paused'].includes(state)?'□ 停止示範':'▷ 觀看示範';
   $('fusion-state').hidden=!currentPairs().length;
+  updatePuzzleReadout();
   saveStats();updateTimer();
+}
+function updatePuzzleReadout(){
+  const c=concept(encounter,Math.min(step,5),encounter.me),diagram=$('my-puzzle');
+  if(step>=6){diagram.replaceChildren();$('puzzle-description').textContent='概念解消，演練完成。';diagram.setAttribute('aria-label','概念已解消');return;}
+  if(c.kind==='concept'){
+    const tower=step<=3?encounter.first:encounter.second;
+    diagram.innerHTML=puzzleMarkup(c.type,$('hints').checked||demo?tower:null);
+    const available=PUZZLES[c.type].filter(t=>!t.dominant).map(t=>TILES[t.key].name).join('／');
+    $('puzzle-description').textContent='你有'+available+'。找與你同樣有本輪塔元素的人；金框是主元素。';diagram.setAttribute('aria-label',GREEK[c.type]+' 拼圖，可合成 '+available);
+  }else if(c.kind==='animal'){
+    diagram.innerHTML=`<circle cx="0" cy="-31" r="22" fill="${ELEMENTS[c.type].color}22" stroke="${ELEMENTS[c.type].color}"/><text x="0" y="-24" text-anchor="middle" fill="${ELEMENTS[c.type].color}" font-size="21">${ELEMENTS[c.type].animal}</text>`;
+    $('puzzle-description').textContent='已合成'+ELEMENTS[c.type].animal+'，持有'+ELEMENTS[c.type].name+'概念。';diagram.setAttribute('aria-label',c.text);
+  }else{
+    diagram.innerHTML='<text x="0" y="-20" text-anchor="middle" fill="#748f85" font-size="28">◇</text>';
+    $('puzzle-description').textContent=c.kind==='none'?'尚無拼圖，接到長概念爆發後會取得。':'目前是未爆發狀態，爆發後頭上才會顯示拼圖。';diagram.setAttribute('aria-label','尚未取得完整概念拼圖');
+  }
 }
 function updateTimer(){
   const timer=$('timer');timer.replaceChildren();
@@ -127,12 +145,23 @@ function updateTimer(){
   timer.style.color=!unbounded&&remaining<2?'#edab94':'';
   const pairIndex=currentPairs().findIndex(pair=>pair.includes(encounter.me));
   $('fusion-state').textContent=pairIndex>=0?hold[pairIndex]>=1.98?'✓ 合成完成':'合成進度 '+Math.min(2,hold[pairIndex]||0).toFixed(1)+' / 2.0 秒':'保持距離，等待隊友合成';
+  const cast=castModel({state,mode,demo,duration:STEPS[Math.min(step,5)].duration,age:stageAge,remaining});
+  $('cast-name').textContent=step>=6?'概念解消':STEPS[step].name;
+  $('cast-seconds').replaceChildren(document.createTextNode(cast.seconds.toFixed(1)));
+  const unit=document.createElement('small');unit.textContent='s';$('cast-seconds').append(unit);
+  $('cast-fill').style.width=(cast.progress*100)+'%';
+  $('cast-track').setAttribute('aria-valuenow',String(Math.round(cast.progress*100)));
+  $('cast-track').setAttribute('aria-valuetext',cast.status+'，剩餘 '+cast.seconds.toFixed(1)+' 秒');
+  $('cast-status').textContent=cast.status;$('cast-hud').dataset.state=state;$('cast-hud').classList.toggle('cast-ready',cast.waiting);
+  $('link-cast').hidden=pairIndex<0||step>=6;
+  if(pairIndex>=0){const h=Math.min(2,hold[pairIndex]||0);$('link-fill').style.width=(h/2*100)+'%';$('link-seconds').textContent=h.toFixed(1)+' / 2.0s';$('link-label').textContent=h>=1.98?'連結完成':'與搭檔接觸合成';}
 }
 function buildSprites(){
   $('players').replaceChildren();sprite.length=0;
   ROLES.forEach((_,i)=>{
     const g=svg('g',{'class':'player-tag'}),glow=svg('circle',{r:16,fill:'#b8f0cf22',filter:'url(#softglow)'}),ring=svg('circle',{r:14,'class':'player-ring'}),body=svg('circle',{r:10,'class':'player-body'}),role=svg('text',{y:3.5,'class':'player-role'}),symbol=svg('text',{y:-19,'class':'player-symbol'}),you=svg('text',{y:26,'class':'you-label'},'YOU');
-    g.append(glow,ring,body,role,symbol,you);$('players').append(g);sprite.push({g,glow,ring,body,role,symbol,you});
+    const puzzle=svg('g',{'class':'overhead-puzzle'}),stem=svg('path',{stroke:'#b4c7bf66','stroke-width':.7,fill:'none'});
+    g.append(glow,ring,body,role,stem,puzzle,symbol,you);$('players').append(g);sprite.push({g,glow,ring,body,role,symbol,you,puzzle,stem,puzzleKey:''});
   });
 }
 function renderScene(){
@@ -164,9 +193,17 @@ function drawPlayers(){
     el.role.textContent=player.role;el.ring.style.display=isYou?'':'none';el.glow.style.display=isYou?'':'none';el.you.style.display=isYou?'':'none';
     const rc=player.role[0]==='H'?'#49795e':player.role[0]==='D'?'#955d60':'#4c6a91';
     el.body.setAttribute('fill',rc);el.body.setAttribute('stroke',isYou?'#d3f9e7':'#b7c7c08c');
-    const symbol=c.kind==='animal'?ELEMENTS[c.type].symbol:c.kind==='none'?'·':c.kind==='debuff'?player.code==='sp2'?'Ⅱ':player.code==='sp3'?'Ⅲ':(player.code[0]==='s'?'短':'長')+GREEK[player.code[1]]:GREEK[c.type];
-    el.symbol.textContent=symbol;el.symbol.setAttribute('fill',colour[c.type]||'#acbfaf');
-    el.g.setAttribute('aria-label',player.role+(isYou?' 你':'')+' '+c.text);
+    const showPuzzle=c.kind==='concept'&&step<6;
+    const highlight=($('hints').checked||demo)?s<=3?encounter.first:encounter.second:null;
+    const key=showPuzzle?c.type+':'+highlight:'';
+    if(el.puzzleKey!==key){el.puzzle.innerHTML=showPuzzle?puzzleMarkup(c.type,highlight):'';el.puzzleKey=key;}
+    const overheadShift=showPuzzle&&near.length>1?(near.indexOf(i)-(near.length-1)/2)*26:0;
+    el.puzzle.setAttribute('transform',`translate(${overheadShift} 0)`);
+    el.stem.setAttribute('d',showPuzzle?`M0 -12L${overheadShift} -20`:'');
+    const symbol=c.kind==='animal'?ELEMENTS[c.type].animal:c.kind==='none'?'·':c.kind==='debuff'?player.code==='sp2'?'Ⅱ':player.code==='sp3'?'Ⅲ':(player.code[0]==='s'?'短':'長')+GREEK[player.code[1]]:GREEK[c.type];
+    el.symbol.textContent=step>=6?'':symbol;el.symbol.setAttribute('fill',colour[c.type]||'#acbfaf');el.symbol.setAttribute('y',showPuzzle?-62:-19);el.symbol.setAttribute('x',overheadShift);
+    const shared=showPuzzle?PUZZLES[c.type].map(t=>TILES[t.key].name).join('、'):'';
+    el.g.setAttribute('aria-label',player.role+(isYou?' 你':'')+' '+c.text+(shared?'，拼圖：'+shared:''));
   });
   const path=$('hint-path');if(path){const a=px(positions[encounter.me]),b=px(encounter.plans[s][encounter.me].target);path.setAttribute('d',`M${a.x} ${a.y}L${b.x} ${b.y}`);}
   const effects=$('effect-layer');effects.replaceChildren();
@@ -205,7 +242,7 @@ function animate(time){
       if(demo){
         const allReady=positions.every((p,i)=>distance(p,encounter.plans[step][i].target)<.3);
         remaining=Math.max(0,STEPS[step].duration-stageAge);
-        if(allReady&&stageAge>4.5&&hold.every(h=>h>=1.98))resolve();
+        if(allReady&&remaining<=0&&hold.every(h=>h>=1.98))resolve();
       }else if(mode==='challenge'){remaining-=dt;if(remaining<=0)resolve();}
     }
   }

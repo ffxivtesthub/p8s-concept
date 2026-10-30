@@ -2,6 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createEncounter,validate,CODES,ROLES,concept,ELEMENTS} from '../dist/engine.mjs';
+import {PUZZLES,puzzleMarkup,castModel} from '../dist/ui-model.mjs';
+test('head puzzles share exactly the tower element required by each legal synthesis',()=>{
+  for(const [element,{pair}] of Object.entries(ELEMENTS)){
+    const a=PUZZLES[pair[0]],b=PUZZLES[pair[1]];
+    const shared=a.filter(t=>b.some(other=>other.key===t.key)).map(t=>t.key);
+    assert.deepEqual(shared,[element]);
+  }
+  for(const type of ['A','B','C']){
+    assert.equal(PUZZLES[type].filter(t=>t.dominant).length,1);
+    assert.equal((puzzleMarkup(type).match(/class="puzzle-tile"/g)||[]).length,3);
+  }
+});
+test('cast HUD distinguishes manual waiting, automatic countdown, pause and completion',()=>{
+  const base={state:'running',mode:'training',demo:false,duration:8,age:3,remaining:8};
+  assert.equal(castModel(base).seconds,5);
+  assert.equal(castModel(base).progress,.375);
+  assert.equal(castModel({...base,age:10}).waiting,true);
+  const automatic=castModel({...base,mode:'challenge',remaining:2});
+  assert.equal(automatic.seconds,2);assert.equal(automatic.progress,.75);assert.equal(automatic.waiting,false);
+  assert.equal(castModel({...base,state:'paused'}).status,'已暫停');
+  assert.equal(castModel({...base,state:'idle'}).progress,0);
+  assert.equal(castModel({...base,state:'cleared'}).progress,1);
+});
 test('all eight starting states are selectable from valid option tags',()=>{
   const html=readFileSync(new URL('../dist/index.html',import.meta.url),'utf8');
   const values=[...html.matchAll(/<option\s+value="([^"]+)"/g)].map(m=>m[1]);
