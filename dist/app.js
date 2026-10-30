@@ -122,6 +122,7 @@ function updateUI(){
 function updateTimer(){
   const timer=$('timer');timer.replaceChildren();
   const unbounded=mode==='training'&&!demo;timer.append(document.createTextNode(unbounded?'∞':Math.max(0,remaining).toFixed(1)));
+  if(state==='running'&&mode==='challenge'&&!demo)$('state-badge').textContent='剩餘 '+Math.max(0,remaining).toFixed(1)+' 秒';
   const small=document.createElement('small');small.textContent=unbounded?'不限時':demo?'自動示範':'本步剩餘秒數';timer.append(small);
   timer.style.color=!unbounded&&remaining<2?'#edab94':'';
   const pairIndex=currentPairs().findIndex(pair=>pair.includes(encounter.me));
