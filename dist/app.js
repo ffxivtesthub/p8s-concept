@@ -84,7 +84,7 @@ function chooseMode(next){
   mode=next;$('hints').checked=mode==='training';reset(true);
 }
 function taskText(){
-  if(step>=6)return ['流程完成','六個步驟全部完成。'];
+  if(step>=6)return ['流程完成','合成、踩塔與左右刀已連續處理完成。'];
   const p=encounter.players[encounter.me],code=p.code,plan=actorPlan(encounter.me),g=GREEK[encounter.typeAfter[encounter.me]];
   const spot=code.length===2?code[1]:null;
   if(step===0){
@@ -114,7 +114,7 @@ function updateUI(){
   $('state-badge').textContent=({idle:'準備就緒',running:demo?'自動示範':'演練中',paused:'已暫停',failed:'概念失敗',review:'查看解法',cleared:'演練完成'})[state];
   $('state-badge').className='state-badge '+(state==='failed'?'failed':state==='running'?'running':'');
   $('step-number').textContent=String(Math.min(ROUND_STEPS.indexOf(roundBase(s))+1,4)).padStart(2,'0');
-  $('stage-select').value=String(Math.min(step,5));$('previous-stage').disabled=step===0;$('next-stage').disabled=step>=4;
+  $('stage-select').value=String(step>=6?4:step);$('previous-stage').disabled=step===0;$('next-stage').disabled=step>=4;
   $('timeline').replaceChildren(...ROUND_STEPS.map((i,n)=>{
     const st=STEPS[i],el=document.createElement('button'),current=roundBase(s)===i&&step<6;
     el.type='button';el.className='timeline-step '+(current?'current':step>i?'done':'');if(current)el.setAttribute('aria-current','step');el.addEventListener('click',()=>jumpToStage(i));
